@@ -1,0 +1,33 @@
+# Golang
+bin/
+vendor/
+*.exe
+*.test
+*.out
+coverage/
+*.coverprofile
+*.cov
+*.importcfg
+*.sum
+*.mod
+.DS_Store
+
+# System/Editor
+.idea/
+*.swp
+*.swo
+*.bak
+Thumbs.db
+ehthumbs.db
+
+# OS generated files
+.DS_Store
+Icon?
+*.pyc
+__pycache__/
+*.orig
+*.rej
+
+# Optional Next.js static export
+out/
+
