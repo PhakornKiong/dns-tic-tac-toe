@@ -78,6 +78,7 @@ export default function Home() {
   const createOrJoinSession = async () => {
     setLoading(true);
     setError('');
+    setSessionExpired(false);
 
     try {
       if (newSessionId) {
@@ -135,20 +136,22 @@ export default function Home() {
           updateDNSQueryById(boardQueryId, boardData.dns_response);
         }
 
+        // Player role MUST come from join response only, regardless of which response completes first
         if (!joinResponse.ok) {
           // Don't throw error, just log it - user can still manually join
           console.error('Auto-join failed:', joinData.error);
         } else {
           setPlayerToken(joinData.player_token);
           setPlayer(joinData.player as Player);
-          // Update game state from board response
-          if (boardResponse.ok) {
-            setGameState({
-              board: boardData.board,
-              turn: boardData.turn,
-              status: boardData.status,
-            });
-          }
+        }
+
+        // Update game state from board response (independent of join response)
+        if (boardResponse.ok) {
+          setGameState({
+            board: boardData.board,
+            turn: boardData.turn,
+            status: boardData.status,
+          });
         }
       }
     } catch (err: any) {
@@ -168,6 +171,7 @@ export default function Home() {
 
     setLoading(true);
     setError('');
+    setSessionExpired(false);
 
     try {
       // Add both queries immediately so they have the same timestamp
@@ -204,10 +208,11 @@ export default function Home() {
         throw new Error(joinData.error || 'Failed to join session');
       }
 
+      // Player role MUST come from join response only, regardless of which response completes first
       setPlayerToken(joinData.player_token);
       setPlayer(joinData.player as Player);
 
-      // Update game state from board response
+      // Update game state from board response (independent of join response)
       if (boardResponse.ok) {
         setGameState({
           board: boardData.board,
@@ -514,17 +519,10 @@ export default function Home() {
               updateDNSQueryById(boardQueryId, boardData.dns_response);
             }
 
-            if (joinResponse.ok && joinData.dns_response) {
+            // Player role MUST come from join response only, regardless of which response completes first
+            if (joinResponse.ok) {
               setPlayerToken(joinData.player_token);
               setPlayer(joinData.player as Player);
-              // Update game state from board response
-              if (boardResponse.ok) {
-                setGameState({
-                  board: boardData.board,
-                  turn: boardData.turn,
-                  status: boardData.status,
-                });
-              }
               // Clean up URL by removing query parameters
               router.replace(window.location.pathname, undefined, { shallow: true });
             } else {
@@ -534,6 +532,15 @@ export default function Home() {
               } else {
                 setError(errorMessage);
               }
+            }
+
+            // Update game state from board response (independent of join response)
+            if (boardResponse.ok) {
+              setGameState({
+                board: boardData.board,
+                turn: boardData.turn,
+                status: boardData.status,
+              });
             }
           } else {
             const errorMessage = data.error || 'Session not found';
