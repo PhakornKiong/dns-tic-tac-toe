@@ -1,0 +1,29 @@
+[Unit]
+Description=DNS Tic-Tac-Toe Server
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/dns-tic-tac-toe
+ExecStart=/opt/dns-tic-tac-toe/dns-tic-tac-toe
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables
+EnvironmentFile=/opt/dns-tic-tac-toe/.env
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+

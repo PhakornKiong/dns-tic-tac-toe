@@ -8,8 +8,6 @@ coverage/
 *.coverprofile
 *.cov
 *.importcfg
-*.sum
-*.mod
 .DS_Store
 
 # System/Editor
