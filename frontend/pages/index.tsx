@@ -115,7 +115,14 @@ export default function Home() {
         await refreshBoard();
         
         // Auto-join the newly created session - add both queries immediately
-        addDNSQuery(`${newSessionId}.join.${ZONE}`, 'join');
+        const joinQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        setDnsQueries((prev) => [...prev, {
+          id: joinQueryId,
+          query: `${newSessionId}.join.${ZONE}`,
+          response: undefined,
+          timestamp: new Date(),
+          type: 'join',
+        }]);
         const boardQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
         setDnsQueries((prev) => [...prev, {
           id: boardQueryId,
@@ -145,7 +152,7 @@ export default function Home() {
             dns: joinData.dns_latency,
             total: joinApiLatency,
           };
-          updateLastDNSQuery(joinData.dns_response, joinLatency);
+          updateDNSQueryById(joinQueryId, joinData.dns_response, joinLatency);
         }
 
         // Update board query response
@@ -197,7 +204,14 @@ export default function Home() {
 
     try {
       // Add both queries immediately so they have the same timestamp
-      addDNSQuery(`${sessionId}.join.${ZONE}`, 'join');
+      const joinQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      setDnsQueries((prev) => [...prev, {
+        id: joinQueryId,
+        query: `${sessionId}.join.${ZONE}`,
+        response: undefined,
+        timestamp: new Date(),
+        type: 'join',
+      }]);
       const boardQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
       setDnsQueries((prev) => [...prev, {
         id: boardQueryId,
@@ -227,7 +241,7 @@ export default function Home() {
           dns: joinData.dns_latency,
           total: joinApiLatency,
         };
-        updateLastDNSQuery(joinData.dns_response, joinLatency);
+        updateDNSQueryById(joinQueryId, joinData.dns_response, joinLatency);
       }
 
       // Update board query response
@@ -549,7 +563,14 @@ export default function Home() {
           const data = await response.json();
           if (response.ok) {
             // Session exists, now auto-join - add both queries immediately
-            addDNSQuery(`${targetSessionId}.join.${ZONE}`, 'join');
+            const joinQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+            setDnsQueries((prev) => [...prev, {
+              id: joinQueryId,
+              query: `${targetSessionId}.join.${ZONE}`,
+              response: undefined,
+              timestamp: new Date(),
+              type: 'join',
+            }]);
             const boardQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
             setDnsQueries((prev) => [...prev, {
               id: boardQueryId,
@@ -579,7 +600,7 @@ export default function Home() {
                 dns: joinData.dns_latency,
                 total: joinApiLatency,
               };
-              updateLastDNSQuery(joinData.dns_response, joinLatency);
+              updateDNSQueryById(joinQueryId, joinData.dns_response, joinLatency);
             }
 
             // Update board query response
