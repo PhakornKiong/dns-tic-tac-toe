@@ -44,32 +44,33 @@ export default function Home() {
   const [inviteUrl, setInviteUrl] = useState<string>('');
   const [sessionExpired, setSessionExpired] = useState(false);
 
-  const addDNSQuery = (query: string, type: DNSQuery['type'], response?: string) => {
+  const addDNSQuery = (query: string, type: DNSQuery['type'], response?: string, latency?: DNSQuery['latency']) => {
     const newQuery: DNSQuery = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       query,
       response,
       timestamp: new Date(),
       type,
+      latency,
     };
     setDnsQueries((prev) => [...prev, newQuery]);
   };
 
-  const updateLastDNSQuery = (response: string) => {
+  const updateLastDNSQuery = (response: string, latency?: DNSQuery['latency']) => {
     setDnsQueries((prev) => {
       if (prev.length === 0) return prev;
       const updated = [...prev];
-      updated[updated.length - 1] = { ...updated[updated.length - 1], response };
+      updated[updated.length - 1] = { ...updated[updated.length - 1], response, latency: latency || updated[updated.length - 1].latency };
       return updated;
     });
   };
 
-  const updateDNSQueryById = (id: string, response: string) => {
+  const updateDNSQueryById = (id: string, response: string, latency?: DNSQuery['latency']) => {
     setDnsQueries((prev) => {
       const updated = [...prev];
       const index = updated.findIndex(q => q.id === id);
       if (index !== -1) {
-        updated[index] = { ...updated[index], response };
+        updated[index] = { ...updated[index], response, latency: latency || updated[index].latency };
       }
       return updated;
     });
@@ -89,18 +90,25 @@ export default function Home() {
       } else {
         // Create new session
         addDNSQuery(`new.${ZONE}`, 'new');
+        const apiStartTime = Date.now();
         const response = await fetch('/api/sessions/new', {
           method: 'POST',
         });
+        const apiLatency = Date.now() - apiStartTime;
         const data = await response.json();
+        const latency: DNSQuery['latency'] = {
+          api: apiLatency,
+          dns: data.dns_latency,
+          total: apiLatency,
+        };
         if (!response.ok) {
           if (data.dns_response) {
-            updateLastDNSQuery(data.dns_response);
+            updateLastDNSQuery(data.dns_response, latency);
           }
           throw new Error(data.error || 'Failed to create session');
         }
         if (data.dns_response) {
-          updateLastDNSQuery(data.dns_response);
+          updateLastDNSQuery(data.dns_response, latency);
         }
         const newSessionId = data.session_id;
         setSessionId(newSessionId);
@@ -118,22 +126,36 @@ export default function Home() {
         }]);
 
         // Make both API calls in parallel
+        const joinStartTime = Date.now();
+        const boardStartTime = Date.now();
         const [joinResponse, boardResponse] = await Promise.all([
           fetch(`/api/sessions/${newSessionId}/join`, { method: 'POST' }),
           fetch(`/api/sessions/${newSessionId}/board`),
         ]);
+        const joinApiLatency = Date.now() - joinStartTime;
+        const boardApiLatency = Date.now() - boardStartTime;
 
         const joinData = await joinResponse.json();
         const boardData = await boardResponse.json();
 
         // Update join query response
         if (joinData.dns_response) {
-          updateLastDNSQuery(joinData.dns_response);
+          const joinLatency: DNSQuery['latency'] = {
+            api: joinApiLatency,
+            dns: joinData.dns_latency,
+            total: joinApiLatency,
+          };
+          updateLastDNSQuery(joinData.dns_response, joinLatency);
         }
 
         // Update board query response
         if (boardData.dns_response) {
-          updateDNSQueryById(boardQueryId, boardData.dns_response);
+          const boardLatency: DNSQuery['latency'] = {
+            api: boardApiLatency,
+            dns: boardData.dns_latency,
+            total: boardApiLatency,
+          };
+          updateDNSQueryById(boardQueryId, boardData.dns_response, boardLatency);
         }
 
         // Player role MUST come from join response only, regardless of which response completes first
@@ -186,22 +208,36 @@ export default function Home() {
       }]);
 
       // Make both API calls in parallel
+      const joinStartTime = Date.now();
+      const boardStartTime = Date.now();
       const [joinResponse, boardResponse] = await Promise.all([
         fetch(`/api/sessions/${sessionId}/join`, { method: 'POST' }),
         fetch(`/api/sessions/${sessionId}/board`),
       ]);
+      const joinApiLatency = Date.now() - joinStartTime;
+      const boardApiLatency = Date.now() - boardStartTime;
 
       const joinData = await joinResponse.json();
       const boardData = await boardResponse.json();
 
       // Update join query response
       if (joinData.dns_response) {
-        updateLastDNSQuery(joinData.dns_response);
+        const joinLatency: DNSQuery['latency'] = {
+          api: joinApiLatency,
+          dns: joinData.dns_latency,
+          total: joinApiLatency,
+        };
+        updateLastDNSQuery(joinData.dns_response, joinLatency);
       }
 
       // Update board query response
       if (boardData.dns_response) {
-        updateDNSQueryById(boardQueryId, boardData.dns_response);
+        const boardLatency: DNSQuery['latency'] = {
+          api: boardApiLatency,
+          dns: boardData.dns_latency,
+          total: boardApiLatency,
+        };
+        updateDNSQueryById(boardQueryId, boardData.dns_response, boardLatency);
       }
 
       if (!joinResponse.ok) {
@@ -247,6 +283,7 @@ export default function Home() {
     try {
       const query = `${sessionId}-${playerToken}-move-${row}-${col}.${ZONE}`;
       addDNSQuery(query, 'move');
+      const apiStartTime = Date.now();
       const response = await fetch(`/api/sessions/${sessionId}/move`, {
         method: 'POST',
         headers: {
@@ -258,15 +295,21 @@ export default function Home() {
           col,
         }),
       });
+      const apiLatency = Date.now() - apiStartTime;
       const data = await response.json();
+      const latency: DNSQuery['latency'] = {
+        api: apiLatency,
+        dns: data.dns_latency,
+        total: apiLatency,
+      };
       if (!response.ok) {
         if (data.dns_response) {
-          updateLastDNSQuery(data.dns_response);
+          updateLastDNSQuery(data.dns_response, latency);
         }
         throw new Error(data.error || 'Invalid move');
       }
       if (data.dns_response) {
-        updateLastDNSQuery(data.dns_response);
+        updateLastDNSQuery(data.dns_response, latency);
       }
       setGameState({
         board: data.board,
@@ -297,16 +340,23 @@ export default function Home() {
       if (!silent) {
         addDNSQuery(`${sessionId}.json.${ZONE}`, 'board');
       }
+      const apiStartTime = Date.now();
       const response = await fetch(`/api/sessions/${sessionId}/board`);
+      const apiLatency = Date.now() - apiStartTime;
       const data = await response.json();
+      const latency: DNSQuery['latency'] = {
+        api: apiLatency,
+        dns: data.dns_latency,
+        total: apiLatency,
+      };
       if (!response.ok) {
         if (data.dns_response && !silent) {
-          updateLastDNSQuery(data.dns_response);
+          updateLastDNSQuery(data.dns_response, latency);
         }
         throw new Error(data.error || 'Failed to fetch board');
       }
       if (data.dns_response && !silent) {
-        updateLastDNSQuery(data.dns_response);
+        updateLastDNSQuery(data.dns_response, latency);
       }
       setGameState({
         board: data.board,
@@ -335,18 +385,25 @@ export default function Home() {
 
     try {
       addDNSQuery(`${sessionId}.reset.${ZONE}`, 'reset');
+      const apiStartTime = Date.now();
       const response = await fetch(`/api/sessions/${sessionId}/reset`, {
         method: 'POST',
       });
+      const apiLatency = Date.now() - apiStartTime;
       const data = await response.json();
+      const latency: DNSQuery['latency'] = {
+        api: apiLatency,
+        dns: data.dns_latency,
+        total: apiLatency,
+      };
       if (!response.ok) {
         if (data.dns_response) {
-          updateLastDNSQuery(data.dns_response);
+          updateLastDNSQuery(data.dns_response, latency);
         }
         throw new Error(data.error || 'Failed to reset game');
       }
       if (data.dns_response) {
-        updateLastDNSQuery(data.dns_response);
+        updateLastDNSQuery(data.dns_response, latency);
       }
       setGameState({
         board: data.board,
@@ -486,7 +543,9 @@ export default function Home() {
       const joinFlow = async () => {
         // First, check if session exists by fetching board
         try {
+          const checkStartTime = Date.now();
           const response = await fetch(`/api/sessions/${targetSessionId}/board`);
+          const checkApiLatency = Date.now() - checkStartTime;
           const data = await response.json();
           if (response.ok) {
             // Session exists, now auto-join - add both queries immediately
@@ -501,22 +560,36 @@ export default function Home() {
             }]);
 
             // Make both API calls in parallel
+            const joinStartTime = Date.now();
+            const boardStartTime = Date.now();
             const [joinResponse, boardResponse] = await Promise.all([
               fetch(`/api/sessions/${targetSessionId}/join`, { method: 'POST' }),
               fetch(`/api/sessions/${targetSessionId}/board`),
             ]);
+            const joinApiLatency = Date.now() - joinStartTime;
+            const boardApiLatency = Date.now() - boardStartTime;
 
             const joinData = await joinResponse.json();
             const boardData = await boardResponse.json();
 
             // Update join query response
             if (joinData.dns_response) {
-              updateLastDNSQuery(joinData.dns_response);
+              const joinLatency: DNSQuery['latency'] = {
+                api: joinApiLatency,
+                dns: joinData.dns_latency,
+                total: joinApiLatency,
+              };
+              updateLastDNSQuery(joinData.dns_response, joinLatency);
             }
 
             // Update board query response
             if (boardData.dns_response) {
-              updateDNSQueryById(boardQueryId, boardData.dns_response);
+              const boardLatency: DNSQuery['latency'] = {
+                api: boardApiLatency,
+                dns: boardData.dns_latency,
+                total: boardApiLatency,
+              };
+              updateDNSQueryById(boardQueryId, boardData.dns_response, boardLatency);
             }
 
             // Player role MUST come from join response only, regardless of which response completes first

@@ -25,11 +25,13 @@ export default async function handler(
       ...(DNS_PORT && { port: DNS_PORT }),
     };
     // Try to get JSON response first (more structured)
+    const jsonStartTime = Date.now();
     const jsonResponse = await queryTXT(`${sessionId}.json.${ZONE}`, queryOptions);
+    const jsonLatency = Date.now() - jsonStartTime;
 
     const error = parseError(jsonResponse);
     if (error) {
-      return res.status(400).json({ error, dns_response: jsonResponse });
+      return res.status(400).json({ error, dns_response: jsonResponse, dns_latency: jsonLatency });
     }
 
     const jsonData = parseJSONResponse(jsonResponse);
@@ -39,15 +41,18 @@ export default async function handler(
         turn: jsonData.turn,
         status: jsonData.status,
         dns_response: jsonResponse,
+        dns_latency: jsonLatency,
       });
     }
 
     // Fallback to board command if JSON parsing fails
+    const boardStartTime = Date.now();
     const boardResponse = await queryTXT(`${sessionId}.board.${ZONE}`, queryOptions);
+    const boardLatency = Date.now() - boardStartTime;
 
     const boardError = parseError(boardResponse);
     if (boardError) {
-      return res.status(400).json({ error: boardError, dns_response: boardResponse });
+      return res.status(400).json({ error: boardError, dns_response: boardResponse, dns_latency: boardLatency });
     }
 
     // Parse board from text format (fallback)
@@ -58,6 +63,7 @@ export default async function handler(
       status: 'playing',
       raw: boardResponse,
       dns_response: boardResponse,
+      dns_latency: boardLatency,
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'DNS query failed' });

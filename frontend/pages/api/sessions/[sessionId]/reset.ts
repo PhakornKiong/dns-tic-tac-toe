@@ -24,15 +24,19 @@ export default async function handler(
       ...(DNS_HOST && { host: DNS_HOST }),
       ...(DNS_PORT && { port: DNS_PORT }),
     };
+    const resetStartTime = Date.now();
     const resetResponse = await queryTXT(`${sessionId}.reset.${ZONE}`, queryOptions);
+    const resetLatency = Date.now() - resetStartTime;
 
     const error = parseError(resetResponse);
     if (error) {
-      return res.status(400).json({ error, dns_response: resetResponse });
+      return res.status(400).json({ error, dns_response: resetResponse, dns_latency: resetLatency });
     }
 
     // Get updated board state
+    const boardStartTime = Date.now();
     const boardResponse = await queryTXT(`${sessionId}.json.${ZONE}`, queryOptions);
+    const boardLatency = Date.now() - boardStartTime;
     const boardData = parseJSONResponse(boardResponse);
 
     return res.status(200).json({
@@ -41,6 +45,8 @@ export default async function handler(
       turn: boardData?.turn || 'X',
       status: boardData?.status || 'playing',
       dns_response: resetResponse,
+      dns_latency: resetLatency,
+      board_latency: boardLatency,
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'DNS query failed' });

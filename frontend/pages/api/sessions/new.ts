@@ -14,21 +14,23 @@ export default async function handler(
   }
 
   try {
+    const dnsStartTime = Date.now();
     const dnsResponse = await queryTXT(`new.${ZONE}`, {
       ...(DNS_HOST && { host: DNS_HOST }),
       ...(DNS_PORT && { port: DNS_PORT }),
     });
+    const dnsLatency = Date.now() - dnsStartTime;
 
     const error = parseError(dnsResponse);
     if (error) {
-      return res.status(400).json({ error, dns_response: dnsResponse });
+      return res.status(400).json({ error, dns_response: dnsResponse, dns_latency: dnsLatency });
     }
 
     // Extract session ID from response
     // Format: "New session created!\nSession ID: abc12345\n..."
     const sessionIdMatch = dnsResponse.match(/Session ID: (\w+)/);
     if (!sessionIdMatch) {
-      return res.status(500).json({ error: 'Failed to parse session ID', dns_response: dnsResponse });
+      return res.status(500).json({ error: 'Failed to parse session ID', dns_response: dnsResponse, dns_latency: dnsLatency });
     }
 
     const sessionId = sessionIdMatch[1];
@@ -37,6 +39,7 @@ export default async function handler(
       session_id: sessionId,
       message: 'Session created successfully',
       dns_response: dnsResponse,
+      dns_latency: dnsLatency,
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'DNS query failed' });

@@ -39,13 +39,17 @@ export default async function handler(
       ...(DNS_HOST && { host: DNS_HOST }),
       ...(DNS_PORT && { port: DNS_PORT }),
     };
+    const moveStartTime = Date.now();
     const dnsResponse = await queryTXT(domain, queryOptions);
+    const moveLatency = Date.now() - moveStartTime;
 
     const error = parseError(dnsResponse);
     if (error) {
       // Try to get current board state even on error
       try {
+        const boardStartTime = Date.now();
         const boardResponse = await queryTXT(`${sessionId}.json.${ZONE}`, queryOptions);
+        const boardLatency = Date.now() - boardStartTime;
         const boardData = parseJSONResponse(boardResponse);
         if (boardData) {
           return res.status(400).json({
@@ -54,12 +58,14 @@ export default async function handler(
             turn: boardData.turn,
             status: boardData.status,
             dns_response: dnsResponse,
+            dns_latency: moveLatency,
+            board_latency: boardLatency,
           });
         }
       } catch {
         // Ignore board fetch errors
       }
-      return res.status(400).json({ error, dns_response: dnsResponse });
+      return res.status(400).json({ error, dns_response: dnsResponse, dns_latency: moveLatency });
     }
 
     // Try to parse JSON from response
@@ -71,11 +77,14 @@ export default async function handler(
         turn: jsonData.turn,
         status: jsonData.status,
         dns_response: dnsResponse,
+        dns_latency: moveLatency,
       });
     }
 
     // If no JSON, fetch current board state
+    const boardStartTime = Date.now();
     const boardResponse = await queryTXT(`${sessionId}.json.${ZONE}`, queryOptions);
+    const boardLatency = Date.now() - boardStartTime;
     const boardData = parseJSONResponse(boardResponse);
 
     return res.status(200).json({
@@ -84,6 +93,8 @@ export default async function handler(
       turn: boardData?.turn || 'X',
       status: boardData?.status || 'playing',
       dns_response: dnsResponse,
+      dns_latency: moveLatency,
+      board_latency: boardLatency,
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'DNS query failed' });

@@ -20,14 +20,16 @@ export default async function handler(
   }
 
   try {
+    const dnsStartTime = Date.now();
     const dnsResponse = await queryTXT(`${sessionId}.join.${ZONE}`, {
       ...(DNS_HOST && { host: DNS_HOST }),
       ...(DNS_PORT && { port: DNS_PORT }),
     });
+    const dnsLatency = Date.now() - dnsStartTime;
 
     const error = parseError(dnsResponse);
     if (error) {
-      return res.status(400).json({ error, dns_response: dnsResponse });
+      return res.status(400).json({ error, dns_response: dnsResponse, dns_latency: dnsLatency });
     }
 
     // Extract player token and player from response
@@ -36,7 +38,7 @@ export default async function handler(
     const playerMatch = dnsResponse.match(/You are playing as: ([XO])/);
 
     if (!tokenMatch || !playerMatch) {
-      return res.status(500).json({ error: 'Failed to parse join response', dns_response: dnsResponse });
+      return res.status(500).json({ error: 'Failed to parse join response', dns_response: dnsResponse, dns_latency: dnsLatency });
     }
 
     return res.status(200).json({
@@ -45,6 +47,7 @@ export default async function handler(
       player: playerMatch[1],
       message: `Joined as ${playerMatch[1]}`,
       dns_response: dnsResponse,
+      dns_latency: dnsLatency,
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'DNS query failed' });

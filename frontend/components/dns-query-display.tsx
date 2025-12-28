@@ -15,6 +15,11 @@ export interface DNSQuery {
   response?: string
   timestamp: Date
   type: 'new' | 'join' | 'board' | 'move' | 'reset'
+  latency?: {
+    dns?: number // DNS query latency in ms
+    api?: number // API request latency in ms
+    total?: number // Total latency (API + DNS) in ms
+  }
 }
 
 interface DNSQueryDisplayProps {
@@ -117,13 +122,40 @@ export function DNSQueryDisplay({ queries, onClear, dnsHost, dnsPort, dnsZone }:
           <div className="space-y-3">
             {queries.slice().reverse().map((query) => (
               <div key={query.id} className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <Badge variant={getQueryTypeColor(query.type)} className="text-xs font-medium px-2 py-0.5">
-                    {query.type}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {query.timestamp.toLocaleTimeString()}
-                  </span>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Badge variant={getQueryTypeColor(query.type)} className="text-xs font-medium px-2 py-0.5">
+                      {query.type}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      {query.timestamp.toLocaleTimeString()}
+                    </span>
+                  </div>
+                  {query.latency && (
+                    <div className="flex items-center justify-end gap-1.5 group/latency">
+                      {query.latency.api !== undefined ? (
+                        <>
+                          <Badge variant="outline" className="text-xs font-mono px-1.5 py-0.5 bg-muted/50 group-hover/latency:hidden">
+                            {query.latency.api}ms
+                          </Badge>
+                          {query.latency.dns !== undefined && (
+                            <div className="hidden group-hover/latency:flex items-center gap-1.5">
+                              <Badge variant="outline" className="text-xs font-mono px-1.5 py-0.5 bg-muted/50">
+                                {query.latency.total !== undefined ? query.latency.total : query.latency.api}ms
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground/70 font-mono">
+                                DNS:{query.latency.dns}ms API:{query.latency.api}ms
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      ) : query.latency.total !== undefined ? (
+                        <Badge variant="outline" className="text-xs font-mono px-1.5 py-0.5 bg-muted/50">
+                          {query.latency.total}ms
+                        </Badge>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
                 {/* Request */}
                 <div className="space-y-1.5">
