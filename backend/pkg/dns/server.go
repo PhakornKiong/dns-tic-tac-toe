@@ -3,6 +3,7 @@ package dns
 import (
 	"fmt"
 	"log"
+	"net"
 	"strings"
 
 	"dns-tic-tac-toe/pkg/game"
@@ -15,14 +16,22 @@ type Server struct {
 	sessionManager *game.Manager
 	zone           Zone
 	ttl            uint32
+	nsHostname     string
+	nsIP           string
 }
 
 // NewServer creates a new DNS server that uses the provided session manager
-func NewServer(sessionManager *game.Manager, zone string, ttl uint32) *Server {
+func NewServer(sessionManager *game.Manager, zone string, ttl uint32, nsHostname string, nsIP string) *Server {
+	// Ensure NS hostname has trailing dot
+	if nsHostname != "" && !strings.HasSuffix(nsHostname, ".") {
+		nsHostname += "."
+	}
 	return &Server{
 		sessionManager: sessionManager,
 		zone:           Zone(zone),
 		ttl:            ttl,
+		nsHostname:     nsHostname,
+		nsIP:           nsIP,
 	}
 }
 
@@ -66,7 +75,46 @@ func (ds *Server) HandleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	// For non-TXT queries that aren't NS, return NODATA (empty answer)
+	// Handle A queries for the name server hostname
+	if qtype == dns.TypeA {
+		// Check if query is for the name server hostname
+		if ds.nsHostname != "" && ds.nsIP != "" {
+			qnameNormalized := qname
+			nsHostnameNormalized := ds.nsHostname
+			if !strings.HasSuffix(qnameNormalized, ".") {
+				qnameNormalized += "."
+			}
+			if !strings.HasSuffix(nsHostnameNormalized, ".") {
+				nsHostnameNormalized += "."
+			}
+
+			// Check if query matches the name server hostname (exact match or subdomain)
+			if qnameNormalized == nsHostnameNormalized || strings.HasSuffix(qnameNormalized, "."+nsHostnameNormalized) {
+				ds.writeARecord(m, qname, ds.nsIP)
+				w.WriteMsg(m)
+				return
+			}
+		}
+
+		// Check if it's for our zone (but not the NS hostname)
+		zoneNormalized := ds.zone.Normalize()
+		qnameNormalized := qname
+		if !strings.HasSuffix(qnameNormalized, ".") {
+			qnameNormalized += "."
+		}
+
+		if strings.HasSuffix(qnameNormalized, zoneNormalized) {
+			// It's our zone but not the NS hostname, return empty answer (NODATA)
+			w.WriteMsg(m)
+			return
+		}
+		// Not our zone, return NXDOMAIN
+		m.SetRcode(r, dns.RcodeNameError)
+		w.WriteMsg(m)
+		return
+	}
+
+	// For non-TXT queries that aren't NS or A, return NODATA (empty answer)
 	if qtype != dns.TypeTXT {
 		// Check if it's for our zone first
 		zoneNormalized := ds.zone.Normalize()
@@ -326,14 +374,15 @@ func (ds *Server) handleJSONCommand(m *dns.Msg, qname string, session *game.Sess
 
 // writeNSRecord writes an NS record for the zone
 func (ds *Server) writeNSRecord(m *dns.Msg, qname string) {
-	// Get the zone name (without trailing dot for NS record)
-	zoneName := strings.TrimSuffix(string(ds.zone), ".")
-	if zoneName == "" {
-		zoneName = "game.local"
+	// Use configured name server hostname, or default to localhost
+	nsName := ds.nsHostname
+	if nsName == "" {
+		nsName = "localhost."
 	}
-
-	// Use localhost as the name server (or could use the actual server hostname)
-	nsName := "localhost."
+	// Ensure it has trailing dot
+	if !strings.HasSuffix(nsName, ".") {
+		nsName += "."
+	}
 
 	ns := &dns.NS{
 		Hdr: dns.RR_Header{
@@ -345,6 +394,31 @@ func (ds *Server) writeNSRecord(m *dns.Msg, qname string) {
 		Ns: nsName,
 	}
 	m.Answer = append(m.Answer, ns)
+}
+
+// writeARecord writes an A record with the given IP address
+func (ds *Server) writeARecord(m *dns.Msg, qname string, ip string) {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		// Invalid IP address, skip adding the record
+		return
+	}
+	// Ensure it's IPv4
+	if parsedIP.To4() == nil {
+		// Not an IPv4 address, skip
+		return
+	}
+
+	a := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   qname,
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    ds.ttl,
+		},
+		A: parsedIP.To4(),
+	}
+	m.Answer = append(m.Answer, a)
 }
 
 // handleError handles DNS errors

@@ -16,9 +16,11 @@ import (
 // Config holds all configuration values loaded from environment variables
 type Config struct {
 	// DNS Server Configuration
-	DNSZone string `env:"DNS_ZONE" envDefault:"game.local"`
-	DNSPort string `env:"DNS_PORT" envDefault:"53"`
-	DNSTTL  uint32 `env:"DNS_TTL" envDefault:"0"`
+	DNSZone    string `env:"DNS_ZONE" envDefault:"game.local"`
+	DNSPort    string `env:"DNS_PORT" envDefault:"53"`
+	DNSTTL     uint32 `env:"DNS_TTL" envDefault:"0"`
+	NSHostname string `env:"NS_HOSTNAME" envDefault:"localhost"`
+	NSIP       string `env:"NS_IP" envDefault:"127.0.0.1"`
 
 	// Session Management Configuration
 	SessionIDLength   int `env:"SESSION_ID_LENGTH" envDefault:"8"`
@@ -64,7 +66,7 @@ func main() {
 	}()
 
 	// Create DNS server that uses the session manager and config
-	dnsServer := dnsgame.NewServer(sessionManager, zone, cfg.DNSTTL)
+	dnsServer := dnsgame.NewServer(sessionManager, zone, cfg.DNSTTL, cfg.NSHostname, cfg.NSIP)
 
 	// Setup DNS server - handle all queries and check zone in handler
 	dns.HandleFunc(".", dnsServer.HandleRequest)
