@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { queryTXT, parseError } from '@/lib/dns-client';
 
-const DNS_HOST = process.env.DNS_HOST || '127.0.0.1';
-const DNS_PORT = parseInt(process.env.DNS_PORT || '53', 10);
-const ZONE = process.env.DNS_ZONE || 'game.local';
+const DNS_HOST = process.env.NEXT_PUBLIC_DNS_HOST;
+const DNS_PORT = process.env.NEXT_PUBLIC_DNS_PORT ? parseInt(process.env.NEXT_PUBLIC_DNS_PORT, 10) : undefined;
+const ZONE = process.env.NEXT_PUBLIC_DNS_ZONE || 'game.local';
 
 export default async function handler(
   req: NextApiRequest,
@@ -15,8 +15,8 @@ export default async function handler(
 
   try {
     const dnsResponse = await queryTXT(`new.${ZONE}`, {
-      host: DNS_HOST,
-      port: DNS_PORT,
+      ...(DNS_HOST && { host: DNS_HOST }),
+      ...(DNS_PORT && { port: DNS_PORT }),
     });
 
     const error = parseError(dnsResponse);

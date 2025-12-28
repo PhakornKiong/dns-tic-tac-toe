@@ -20,11 +20,10 @@ interface GameState {
   status: Status;
 }
 
-// DNS configuration - use NEXT_PUBLIC_ prefixed vars for client-side access
-// Fall back to same defaults used in API routes
+// DNS configuration - using NEXT_PUBLIC_ prefixed vars for both client and server
+const DNS_HOST = process.env.NEXT_PUBLIC_DNS_HOST;
+const DNS_PORT = process.env.NEXT_PUBLIC_DNS_PORT ? parseInt(process.env.NEXT_PUBLIC_DNS_PORT, 10) : undefined;
 const ZONE = process.env.NEXT_PUBLIC_DNS_ZONE || 'game.local';
-const DNS_HOST = process.env.NEXT_PUBLIC_DNS_HOST || '127.0.0.1';
-const DNS_PORT = parseInt(process.env.NEXT_PUBLIC_DNS_PORT || '53', 10);
 
 export default function Home() {
   const router = useRouter();

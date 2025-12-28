@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { queryTXT, parseJSONResponse, parseError } from '@/lib/dns-client';
 
-const DNS_HOST = process.env.DNS_HOST || '127.0.0.1';
-const DNS_PORT = parseInt(process.env.DNS_PORT || '53', 10);
-const ZONE = process.env.DNS_ZONE || 'game.local';
+const DNS_HOST = process.env.NEXT_PUBLIC_DNS_HOST;
+const DNS_PORT = process.env.NEXT_PUBLIC_DNS_PORT ? parseInt(process.env.NEXT_PUBLIC_DNS_PORT, 10) : undefined;
+const ZONE = process.env.NEXT_PUBLIC_DNS_ZONE || 'game.local';
 
 export default async function handler(
   req: NextApiRequest,
@@ -35,19 +35,17 @@ export default async function handler(
   try {
     // Format: {session-id}-{token}-move-ROW-COL.game.local
     const domain = `${sessionId}-${token}-move-${row}-${col}.${ZONE}`;
-    const dnsResponse = await queryTXT(domain, {
-      host: DNS_HOST,
-      port: DNS_PORT,
-    });
+    const queryOptions = {
+      ...(DNS_HOST && { host: DNS_HOST }),
+      ...(DNS_PORT && { port: DNS_PORT }),
+    };
+    const dnsResponse = await queryTXT(domain, queryOptions);
 
     const error = parseError(dnsResponse);
     if (error) {
       // Try to get current board state even on error
       try {
-        const boardResponse = await queryTXT(`${sessionId}.json.${ZONE}`, {
-          host: DNS_HOST,
-          port: DNS_PORT,
-        });
+        const boardResponse = await queryTXT(`${sessionId}.json.${ZONE}`, queryOptions);
         const boardData = parseJSONResponse(boardResponse);
         if (boardData) {
           return res.status(400).json({
@@ -77,10 +75,7 @@ export default async function handler(
     }
 
     // If no JSON, fetch current board state
-    const boardResponse = await queryTXT(`${sessionId}.json.${ZONE}`, {
-      host: DNS_HOST,
-      port: DNS_PORT,
-    });
+    const boardResponse = await queryTXT(`${sessionId}.json.${ZONE}`, queryOptions);
     const boardData = parseJSONResponse(boardResponse);
 
     return res.status(200).json({

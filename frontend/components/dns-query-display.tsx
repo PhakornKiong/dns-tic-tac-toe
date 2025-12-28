@@ -25,7 +25,7 @@ interface DNSQueryDisplayProps {
   dnsZone?: string
 }
 
-export function DNSQueryDisplay({ queries, onClear, dnsHost = '127.0.0.1', dnsPort = 53, dnsZone }: DNSQueryDisplayProps) {
+export function DNSQueryDisplay({ queries, onClear, dnsHost, dnsPort, dnsZone }: DNSQueryDisplayProps) {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
   }
@@ -48,9 +48,13 @@ export function DNSQueryDisplay({ queries, onClear, dnsHost = '127.0.0.1', dnsPo
   }
 
   const formatQuery = (query: string) => {
-    // Format: dig @host -p port TXT query (only show -p if port is not 53)
-    const portFlag = dnsPort !== 53 ? ` -p ${dnsPort}` : ''
-    return `dig @${dnsHost}${portFlag} TXT ${query}`
+    // Format: dig TXT query (uses system DNS resolver)
+    // Or: dig @host -p port TXT query (if host is specified)
+    if (dnsHost) {
+      const portFlag = dnsPort && dnsPort !== 53 ? ` -p ${dnsPort}` : '';
+      return `dig @${dnsHost}${portFlag} TXT ${query}`;
+    }
+    return `dig TXT ${query}`;
   }
 
   const isJSON = (str: string): boolean => {

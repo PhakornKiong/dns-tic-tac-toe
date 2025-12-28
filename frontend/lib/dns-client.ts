@@ -1,3 +1,4 @@
+import * as dns from 'node:dns';
 import * as dgram from 'node:dgram';
 import * as dnsPacket from 'dns-packet';
 
@@ -16,29 +17,65 @@ export interface DNSResponse {
   error?: string;
 }
 
-const DEFAULT_OPTIONS: Required<DNSQueryOptions> = {
-  host: '127.0.0.1',
-  port: 53,
-  timeout: 5000,
-};
-
-// Set custom DNS server if provided
-const DNS_HOST = process.env.DNS_HOST || '127.0.0.1';
-const DNS_PORT = parseInt(process.env.DNS_PORT || '53', 10);
-
 /**
- * Makes a DNS TXT query by directly sending a UDP packet to the specified DNS server
- * This bypasses the system DNS resolver and queries the custom DNS server directly
+ * Makes a DNS TXT query
+ * - If host is provided, queries the specified DNS server directly (like `dig @host TXT domain`)
+ * - If host is not provided, uses the system's default DNS resolver (like `dig TXT domain`)
  */
 export async function queryTXT(
   domain: string,
   options: DNSQueryOptions = {}
 ): Promise<string> {
-  // Use provided options, fall back to environment variables, then defaults
-  const host = options.host ?? DNS_HOST;
-  const port = options.port ?? DNS_PORT;
-  const timeout = options.timeout ?? DEFAULT_OPTIONS.timeout;
+  const timeout = options.timeout ?? 5000;
 
+  // If host is specified, use UDP to query that specific DNS server
+  if (options.host) {
+    return queryTXTDirect(domain, options.host, options.port ?? 53, timeout);
+  }
+
+  // Otherwise, use system DNS resolver
+  return new Promise((resolve, reject) => {
+    // Set timeout
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`DNS error: ETIMEDOUT - queryTXT timeout after ${timeout}ms`));
+    }, timeout);
+
+    // Use Node.js built-in DNS resolver (uses system DNS like dig does)
+    dns.resolveTxt(domain, (err, records) => {
+      clearTimeout(timeoutId);
+      
+      if (err) {
+        if (err.code) {
+          reject(new Error(`DNS error: ${err.code} - ${err.message}`));
+        } else {
+          reject(err);
+        }
+        return;
+      }
+      
+      // TXT records are arrays of string arrays (for long TXT records split across multiple strings)
+      if (records && records.length > 0) {
+        // Join all parts of the TXT record
+        const result = records[0].join('');
+        resolve(result);
+        return;
+      }
+      
+      reject(new Error('No TXT record in response'));
+    });
+  });
+}
+
+/**
+ * Makes a DNS TXT query by directly sending a UDP packet to the specified DNS server
+ * This bypasses the system DNS resolver and queries the custom DNS server directly
+ */
+function queryTXTDirect(
+  domain: string,
+  host: string,
+  port: number,
+  timeout: number
+): Promise<string> {
   return new Promise((resolve, reject) => {
     // Create UDP socket
     const socket = dgram.createSocket('udp4');
