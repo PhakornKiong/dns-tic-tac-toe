@@ -27,6 +27,10 @@ func NewServer(sessionManager *game.Manager, zone string, ttl uint32) *Server {
 }
 
 // HandleRequest processes incoming DNS requests
+// Note: TTL is set to 0 by default to prevent caching. However, system DNS resolvers
+// (like macOS mDNSResponder) may enforce minimum TTL values (e.g., 15s) regardless
+// of what the server returns. To see the actual 0 TTL, query the server directly:
+// dig @127.0.0.1 TXT example.game.local
 func (ds *Server) HandleRequest(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
@@ -39,8 +43,50 @@ func (ds *Server) HandleRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 	question := r.Question[0]
 	qname := strings.ToLower(question.Name)
+	qtype := question.Qtype
 
-	// Parse the query
+	// Handle NS queries for the zone
+	if qtype == dns.TypeNS {
+		// Check if query is for our zone or a subdomain
+		zoneNormalized := ds.zone.Normalize()
+		qnameNormalized := qname
+		if !strings.HasSuffix(qnameNormalized, ".") {
+			qnameNormalized += "."
+		}
+
+		if strings.HasSuffix(qnameNormalized, zoneNormalized) {
+			// Return NS record for the zone
+			ds.writeNSRecord(m, qname)
+			w.WriteMsg(m)
+			return
+		}
+		// Not our zone, return NXDOMAIN
+		m.SetRcode(r, dns.RcodeNameError)
+		w.WriteMsg(m)
+		return
+	}
+
+	// For non-TXT queries that aren't NS, return NODATA (empty answer)
+	if qtype != dns.TypeTXT {
+		// Check if it's for our zone first
+		zoneNormalized := ds.zone.Normalize()
+		qnameNormalized := qname
+		if !strings.HasSuffix(qnameNormalized, ".") {
+			qnameNormalized += "."
+		}
+
+		if strings.HasSuffix(qnameNormalized, zoneNormalized) {
+			// It's our zone but wrong query type, return empty answer (NODATA)
+			w.WriteMsg(m)
+			return
+		}
+		// Not our zone, return NXDOMAIN
+		m.SetRcode(r, dns.RcodeNameError)
+		w.WriteMsg(m)
+		return
+	}
+
+	// Parse the query (for TXT queries)
 	query, err := ds.parseQuery(qname)
 	if err != nil {
 		// Not our zone, return NXDOMAIN
@@ -50,7 +96,7 @@ func (ds *Server) HandleRequest(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	// Log successful zone match
-	log.Printf("Handling query: qname=%s, sessionID=%s, command=%s", qname, query.SessionID, query.Command)
+	log.Printf("Handling query: qname=%s, qtype=%d, sessionID=%s, command=%s", qname, qtype, query.SessionID, query.Command)
 
 	// Handle the parsed query
 	ds.handleQuery(m, question.Name, query, w)
@@ -266,12 +312,39 @@ func (ds *Server) handleBoardCommand(m *dns.Msg, qname string, sessionID Session
 // handleResetCommand handles reset commands
 func (ds *Server) handleResetCommand(m *dns.Msg, qname string, sessionID SessionID, session *game.Session) {
 	session.Game.Reset()
+	// After reset, if both players are still in, start the game
+	if session.GetPlayerCount() == 2 {
+		session.Game.StartGame()
+	}
 	WriteReset(m, qname, sessionID, session.Game, ds.ttl)
 }
 
 // handleJSONCommand handles JSON state commands
 func (ds *Server) handleJSONCommand(m *dns.Msg, qname string, session *game.Session) {
 	WriteJSONWithSession(m, qname, session.Game, session, ds.ttl)
+}
+
+// writeNSRecord writes an NS record for the zone
+func (ds *Server) writeNSRecord(m *dns.Msg, qname string) {
+	// Get the zone name (without trailing dot for NS record)
+	zoneName := strings.TrimSuffix(string(ds.zone), ".")
+	if zoneName == "" {
+		zoneName = "game.local"
+	}
+
+	// Use localhost as the name server (or could use the actual server hostname)
+	nsName := "localhost."
+
+	ns := &dns.NS{
+		Hdr: dns.RR_Header{
+			Name:   qname,
+			Rrtype: dns.TypeNS,
+			Class:  dns.ClassINET,
+			Ttl:    ds.ttl,
+		},
+		Ns: nsName,
+	}
+	m.Answer = append(m.Answer, ns)
 }
 
 // handleError handles DNS errors

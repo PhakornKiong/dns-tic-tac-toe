@@ -158,6 +158,11 @@ func (s *Session) JoinSession() (PlayerToken, Player, error) {
 
 	s.Players[token] = assignedPlayer
 
+	// If this is the second player joining, start the game
+	if len(s.Players) == 2 {
+		s.Game.StartGame()
+	}
+
 	return token, assignedPlayer, nil
 }
 

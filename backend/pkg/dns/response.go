@@ -135,6 +135,9 @@ func WriteJoinSuccess(msg *dns.Msg, qname string, sessionID SessionID, token gam
 }
 
 // writeText writes text to the DNS response as a TXT record
+// TTL is set to 0 by default (configured via DNS_TTL env var) to prevent caching
+// Note: System DNS resolvers may enforce minimum TTL values
+// but the server always returns the configured TTL value (0 by default)
 func writeText(msg *dns.Msg, qname string, text string, ttl uint32) {
 	txt := &dns.TXT{
 		Hdr: dns.RR_Header{

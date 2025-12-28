@@ -25,8 +25,8 @@ type Config struct {
 	PlayerTokenLength int `env:"PLAYER_TOKEN_LENGTH" envDefault:"8"`
 
 	// Session Cleanup Configuration
-	SessionMaxAge          time.Duration `env:"SESSION_MAX_AGE" envDefault:"24h"`
-	SessionCleanupInterval time.Duration `env:"SESSION_CLEANUP_INTERVAL" envDefault:"1h"`
+	SessionMaxAge          time.Duration `env:"SESSION_MAX_AGE" envDefault:"120s"`
+	SessionCleanupInterval time.Duration `env:"SESSION_CLEANUP_INTERVAL" envDefault:"120s"`
 }
 
 func main() {

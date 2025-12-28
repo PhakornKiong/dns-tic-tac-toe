@@ -24,6 +24,9 @@ type Engine interface {
 
 	// GetStateJSON returns the game state as a JSON string
 	GetStateJSON() string
+
+	// StartGame sets the game status to playing (called when both players have joined)
+	StartGame()
 }
 
 // TicTacToe implements the Engine interface
@@ -38,7 +41,7 @@ func NewTicTacToe() *TicTacToe {
 		state: &GameState{
 			Board:  [3][3]Player{{"", "", ""}, {"", "", ""}, {"", "", ""}},
 			Turn:   PlayerX,
-			Status: StatusPlaying,
+			Status: StatusPending,
 		},
 	}
 }
@@ -100,10 +103,21 @@ func (g *TicTacToe) MakeMove(row, col int, player Player) error {
 func (g *TicTacToe) Reset() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	// Reset to pending - the caller should call StartGame() if both players are still in
 	g.state = &GameState{
 		Board:  [3][3]Player{{"", "", ""}, {"", "", ""}, {"", "", ""}},
 		Turn:   PlayerX,
-		Status: StatusPlaying,
+		Status: StatusPending,
+	}
+}
+
+// StartGame sets the game status to playing (called when both players have joined)
+func (g *TicTacToe) StartGame() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	// Only start if currently pending
+	if g.state.Status == StatusPending {
+		g.state.Status = StatusPlaying
 	}
 }
 
