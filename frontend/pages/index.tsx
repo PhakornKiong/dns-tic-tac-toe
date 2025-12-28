@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { DNSQueryDisplay, DNSQuery } from '@/components/dns-query-display';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Gamepad2, X, Circle, Copy, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, isSessionExpiredError } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 type Player = 'X' | 'O' | '';
@@ -42,6 +42,7 @@ export default function Home() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [autoJoinAttempted, setAutoJoinAttempted] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string>('');
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const addDNSQuery = (query: string, type: DNSQuery['type'], response?: string) => {
     const newQuery: DNSQuery = {
@@ -59,6 +60,17 @@ export default function Home() {
       if (prev.length === 0) return prev;
       const updated = [...prev];
       updated[updated.length - 1] = { ...updated[updated.length - 1], response };
+      return updated;
+    });
+  };
+
+  const updateDNSQueryById = (id: string, response: string) => {
+    setDnsQueries((prev) => {
+      const updated = [...prev];
+      const index = updated.findIndex(q => q.id === id);
+      if (index !== -1) {
+        updated[index] = { ...updated[index], response };
+      }
       return updated;
     });
   };
@@ -91,33 +103,61 @@ export default function Home() {
         }
         const newSessionId = data.session_id;
         setSessionId(newSessionId);
-        addDNSQuery(`${newSessionId}.board.${ZONE}`, 'board');
         await refreshBoard();
         
-        // Auto-join the newly created session
+        // Auto-join the newly created session - add both queries immediately
         addDNSQuery(`${newSessionId}.join.${ZONE}`, 'join');
-        const joinResponse = await fetch(`/api/sessions/${newSessionId}/join`, {
-          method: 'POST',
-        });
+        const boardQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        setDnsQueries((prev) => [...prev, {
+          id: boardQueryId,
+          query: `${newSessionId}.json.${ZONE}`,
+          response: undefined,
+          timestamp: new Date(),
+          type: 'board',
+        }]);
+
+        // Make both API calls in parallel
+        const [joinResponse, boardResponse] = await Promise.all([
+          fetch(`/api/sessions/${newSessionId}/join`, { method: 'POST' }),
+          fetch(`/api/sessions/${newSessionId}/board`),
+        ]);
+
         const joinData = await joinResponse.json();
+        const boardData = await boardResponse.json();
+
+        // Update join query response
+        if (joinData.dns_response) {
+          updateLastDNSQuery(joinData.dns_response);
+        }
+
+        // Update board query response
+        if (boardData.dns_response) {
+          updateDNSQueryById(boardQueryId, boardData.dns_response);
+        }
+
         if (!joinResponse.ok) {
-          if (joinData.dns_response) {
-            updateLastDNSQuery(joinData.dns_response);
-          }
           // Don't throw error, just log it - user can still manually join
           console.error('Auto-join failed:', joinData.error);
         } else {
-          if (joinData.dns_response) {
-            updateLastDNSQuery(joinData.dns_response);
-          }
           setPlayerToken(joinData.player_token);
           setPlayer(joinData.player as Player);
-          addDNSQuery(`${newSessionId}.board.${ZONE}`, 'board');
-          await refreshBoard();
+          // Update game state from board response
+          if (boardResponse.ok) {
+            setGameState({
+              board: boardData.board,
+              turn: boardData.turn,
+              status: boardData.status,
+            });
+          }
         }
       }
     } catch (err: any) {
-      setError(err.message);
+      const errorMessage = err.message || '';
+      if (isSessionExpiredError(errorMessage)) {
+        handleSessionExpiration(errorMessage);
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -130,26 +170,58 @@ export default function Home() {
     setError('');
 
     try {
+      // Add both queries immediately so they have the same timestamp
       addDNSQuery(`${sessionId}.join.${ZONE}`, 'join');
-      const response = await fetch(`/api/sessions/${sessionId}/join`, {
-        method: 'POST',
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        if (data.dns_response) {
-          updateLastDNSQuery(data.dns_response);
-        }
-        throw new Error(data.error || 'Failed to join session');
+      const boardQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      setDnsQueries((prev) => [...prev, {
+        id: boardQueryId,
+        query: `${sessionId}.json.${ZONE}`,
+        response: undefined,
+        timestamp: new Date(),
+        type: 'board',
+      }]);
+
+      // Make both API calls in parallel
+      const [joinResponse, boardResponse] = await Promise.all([
+        fetch(`/api/sessions/${sessionId}/join`, { method: 'POST' }),
+        fetch(`/api/sessions/${sessionId}/board`),
+      ]);
+
+      const joinData = await joinResponse.json();
+      const boardData = await boardResponse.json();
+
+      // Update join query response
+      if (joinData.dns_response) {
+        updateLastDNSQuery(joinData.dns_response);
       }
-      if (data.dns_response) {
-        updateLastDNSQuery(data.dns_response);
+
+      // Update board query response
+      if (boardData.dns_response) {
+        updateDNSQueryById(boardQueryId, boardData.dns_response);
       }
-      setPlayerToken(data.player_token);
-      setPlayer(data.player as Player);
-      addDNSQuery(`${sessionId}.board.${ZONE}`, 'board');
-      await refreshBoard();
+
+      if (!joinResponse.ok) {
+        throw new Error(joinData.error || 'Failed to join session');
+      }
+
+      setPlayerToken(joinData.player_token);
+      setPlayer(joinData.player as Player);
+
+      // Update game state from board response
+      if (boardResponse.ok) {
+        setGameState({
+          board: boardData.board,
+          turn: boardData.turn,
+          status: boardData.status,
+        });
+      }
     } catch (err: any) {
-      setError(err.message);
+      const errorMessage = err.message || '';
+      if (isSessionExpiredError(errorMessage)) {
+        handleSessionExpiration(errorMessage);
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -197,29 +269,38 @@ export default function Home() {
         status: data.status,
       });
     } catch (err: any) {
-      setError(err.message);
+      const errorMessage = err.message || '';
+      if (isSessionExpiredError(errorMessage)) {
+        handleSessionExpiration(errorMessage);
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const refreshBoard = async () => {
+  const refreshBoard = async (silent = false) => {
     if (!sessionId) return;
 
-    setLoading(true);
-    setError('');
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
 
     try {
-      addDNSQuery(`${sessionId}.json.${ZONE}`, 'board');
+      if (!silent) {
+        addDNSQuery(`${sessionId}.json.${ZONE}`, 'board');
+      }
       const response = await fetch(`/api/sessions/${sessionId}/board`);
       const data = await response.json();
       if (!response.ok) {
-        if (data.dns_response) {
+        if (data.dns_response && !silent) {
           updateLastDNSQuery(data.dns_response);
         }
         throw new Error(data.error || 'Failed to fetch board');
       }
-      if (data.dns_response) {
+      if (data.dns_response && !silent) {
         updateLastDNSQuery(data.dns_response);
       }
       setGameState({
@@ -228,9 +309,16 @@ export default function Home() {
         status: data.status,
       });
     } catch (err: any) {
-      setError(err.message);
+      const errorMessage = err.message || '';
+      if (isSessionExpiredError(errorMessage)) {
+        handleSessionExpiration(errorMessage);
+      } else if (!silent) {
+        setError(errorMessage);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -261,7 +349,12 @@ export default function Home() {
         status: data.status,
       });
     } catch (err: any) {
-      setError(err.message);
+      const errorMessage = err.message || '';
+      if (isSessionExpiredError(errorMessage)) {
+        handleSessionExpiration(errorMessage);
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -278,6 +371,20 @@ export default function Home() {
     });
     setError('');
     setNewSessionId('');
+    setSessionExpired(false);
+  };
+
+  const handleSessionExpiration = (errorMessage: string) => {
+    setSessionExpired(true);
+    setError('Session has expired. Please create or join a new session.');
+    setSessionId('');
+    setPlayerToken('');
+    setPlayer('');
+    setGameState({
+      board: [['', '', ''], ['', '', ''], ['', '', '']],
+      turn: 'X',
+      status: 'playing',
+    });
   };
 
   const getStatusText = () => {
@@ -377,30 +484,72 @@ export default function Home() {
           const response = await fetch(`/api/sessions/${targetSessionId}/board`);
           const data = await response.json();
           if (response.ok) {
-            // Session exists, now auto-join
+            // Session exists, now auto-join - add both queries immediately
             addDNSQuery(`${targetSessionId}.join.${ZONE}`, 'join');
-            const joinResponse = await fetch(`/api/sessions/${targetSessionId}/join`, {
-              method: 'POST',
-            });
+            const boardQueryId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+            setDnsQueries((prev) => [...prev, {
+              id: boardQueryId,
+              query: `${targetSessionId}.json.${ZONE}`,
+              response: undefined,
+              timestamp: new Date(),
+              type: 'board',
+            }]);
+
+            // Make both API calls in parallel
+            const [joinResponse, boardResponse] = await Promise.all([
+              fetch(`/api/sessions/${targetSessionId}/join`, { method: 'POST' }),
+              fetch(`/api/sessions/${targetSessionId}/board`),
+            ]);
+
             const joinData = await joinResponse.json();
-            if (joinResponse.ok && joinData.dns_response) {
+            const boardData = await boardResponse.json();
+
+            // Update join query response
+            if (joinData.dns_response) {
               updateLastDNSQuery(joinData.dns_response);
+            }
+
+            // Update board query response
+            if (boardData.dns_response) {
+              updateDNSQueryById(boardQueryId, boardData.dns_response);
+            }
+
+            if (joinResponse.ok && joinData.dns_response) {
               setPlayerToken(joinData.player_token);
               setPlayer(joinData.player as Player);
-              await refreshBoard();
+              // Update game state from board response
+              if (boardResponse.ok) {
+                setGameState({
+                  board: boardData.board,
+                  turn: boardData.turn,
+                  status: boardData.status,
+                });
+              }
               // Clean up URL by removing query parameters
               router.replace(window.location.pathname, undefined, { shallow: true });
             } else {
-              if (joinData.dns_response) {
-                updateLastDNSQuery(joinData.dns_response);
+              const errorMessage = joinData.error || 'Failed to auto-join session';
+              if (isSessionExpiredError(errorMessage)) {
+                handleSessionExpiration(errorMessage);
+              } else {
+                setError(errorMessage);
               }
-              setError(joinData.error || 'Failed to auto-join session');
             }
           } else {
-            setError(data.error || 'Session not found');
+            const errorMessage = data.error || 'Session not found';
+            if (isSessionExpiredError(errorMessage)) {
+              handleSessionExpiration(errorMessage);
+            } else {
+              setError(errorMessage);
+            }
           }
         } catch (err: any) {
-          setError(err.message || 'Failed to auto-join session');
+          const errorMessage = err.message || 'Failed to auto-join session';
+          if (isSessionExpiredError(errorMessage)) {
+            handleSessionExpiration(errorMessage);
+          } else {
+            setError(errorMessage);
+          }
         }
       };
       
@@ -410,14 +559,14 @@ export default function Home() {
 
   // Auto-refresh board every 2 seconds when in a session
   useEffect(() => {
-    if (!sessionId || !playerToken) return;
+    if (!sessionId || !playerToken || sessionExpired) return;
 
     const interval = setInterval(() => {
-      refreshBoard();
+      refreshBoard(); 
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [sessionId, playerToken]);
+  }, [sessionId, playerToken, sessionExpired]);
 
   return (
     <>
@@ -626,7 +775,7 @@ export default function Home() {
                     {/* Actions */}
                     <div className="flex gap-3 justify-center pt-2">
                       <Button
-                        onClick={refreshBoard}
+                        onClick={() => refreshBoard()}
                         disabled={loading}
                         variant="outline"
                         className="h-10"
