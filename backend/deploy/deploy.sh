@@ -41,8 +41,19 @@ mkdir -p "$INSTALL_DIR"
 echo -e "${GREEN}Installation directory: $INSTALL_DIR${NC}"
 echo ""
 
-# Step 3: Copy files
-echo -e "${YELLOW}[3/5] Copying files to installation directory...${NC}"
+# Step 3: Stop service if running (to allow binary replacement)
+echo -e "${YELLOW}[3/6] Stopping service (if running) to allow binary replacement...${NC}"
+if systemctl is-active --quiet dns-tic-tac-toe.service 2>/dev/null; then
+    echo -e "${YELLOW}Service is running. Stopping it...${NC}"
+    systemctl stop dns-tic-tac-toe.service
+    SERVICE_WAS_RUNNING=true
+else
+    SERVICE_WAS_RUNNING=false
+fi
+echo ""
+
+# Step 4: Copy files
+echo -e "${YELLOW}[4/6] Copying files to installation directory...${NC}"
 cp "$BUILD_DIR/dns-tic-tac-toe" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/dns-tic-tac-toe"
 
@@ -65,16 +76,16 @@ chmod 600 "$INSTALL_DIR/.env"
 echo -e "${GREEN}Files copied successfully${NC}"
 echo ""
 
-# Step 4: Install systemd service
-echo -e "${YELLOW}[4/5] Installing systemd service...${NC}"
+# Step 5: Install systemd service
+echo -e "${YELLOW}[5/6] Installing systemd service...${NC}"
 cp "$SCRIPT_DIR/dns-tic-tac-toe.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable dns-tic-tac-toe.service
 echo -e "${GREEN}Systemd service installed and enabled${NC}"
 echo ""
 
-# Step 5: Configure DNS (disable systemd-resolved and update resolv.conf)
-echo -e "${YELLOW}[5/5] Configuring DNS...${NC}"
+# Step 6: Configure DNS (disable systemd-resolved and update resolv.conf)
+echo -e "${YELLOW}[6/6] Configuring DNS...${NC}"
 read -p "Do you want to disable systemd-resolved and configure /etc/resolv.conf to use 127.0.0.1? (y/N): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -85,9 +96,14 @@ else
 fi
 echo ""
 
-# Start the service
-echo -e "${YELLOW}Starting DNS Tic-Tac-Toe service...${NC}"
-systemctl start dns-tic-tac-toe.service
+# Start or restart the service
+if [ "$SERVICE_WAS_RUNNING" = true ]; then
+    echo -e "${YELLOW}Restarting DNS Tic-Tac-Toe service...${NC}"
+    systemctl restart dns-tic-tac-toe.service
+else
+    echo -e "${YELLOW}Starting DNS Tic-Tac-Toe service...${NC}"
+    systemctl start dns-tic-tac-toe.service
+fi
 
 # Wait a moment and check status
 sleep 2
